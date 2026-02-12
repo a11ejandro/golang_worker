@@ -5,6 +5,7 @@ import (
     "encoding/json"
     "errors"
     "fmt"
+    "io"
     "strconv"
 )
 
@@ -70,10 +71,31 @@ func readBRPOP(rw *bufio.ReadWriter) (key string, payload string, err error) {
     }
     switch line[0] {
     case '*':
-        _, _ = readLine(rw.Reader)
-        key, _ = readLine(rw.Reader)
-        _, _ = readLine(rw.Reader)
-        payload, _ = readLine(rw.Reader)
+        n, err := parseArrayLen(line)
+        if err != nil {
+            return "", "", err
+        }
+        // Redis returns *-1 for nil (timeout) on BRPOP.
+        if n <= 0 {
+            return "", "", nil
+        }
+        if n != 2 {
+            // Defensive: consume elements to keep stream aligned.
+            for i := 0; i < n; i++ {
+                if _, err := readBulkString(rw.Reader); err != nil {
+                    return "", "", err
+                }
+            }
+            return "", "", fmt.Errorf("unexpected BRPOP array length: %d", n)
+        }
+        key, err = readBulkString(rw.Reader)
+        if err != nil {
+            return "", "", err
+        }
+        payload, err = readBulkString(rw.Reader)
+        if err != nil {
+            return "", "", err
+        }
         return key, payload, nil
     case '$':
         if line == "$-1" {
@@ -92,4 +114,44 @@ func readBRPOP(rw *bufio.ReadWriter) (key string, payload string, err error) {
     default:
         return "", "", fmt.Errorf("unexpected reply: %s", line)
     }
+}
+
+func parseArrayLen(line string) (int, error) {
+    if len(line) < 2 || line[0] != '*' {
+        return 0, fmt.Errorf("invalid array reply: %q", line)
+    }
+    n, err := strconv.Atoi(line[1:])
+    if err != nil {
+        return 0, fmt.Errorf("invalid array length: %q", line)
+    }
+    return n, nil
+}
+
+func readBulkString(r *bufio.Reader) (string, error) {
+    header, err := readLine(r)
+    if err != nil {
+        return "", err
+    }
+    if len(header) == 0 || header[0] != '$' {
+        return "", fmt.Errorf("expected bulk string, got %q", header)
+    }
+    if header == "$-1" {
+        return "", nil
+    }
+    l, err := strconv.Atoi(header[1:])
+    if err != nil {
+        return "", fmt.Errorf("invalid bulk length: %q", header)
+    }
+    buf := make([]byte, l)
+    if _, err := io.ReadFull(r, buf); err != nil {
+        return "", ioEOF
+    }
+    // consume CRLF
+    if _, err := r.ReadByte(); err != nil {
+        return "", ioEOF
+    }
+    if _, err := r.ReadByte(); err != nil {
+        return "", ioEOF
+    }
+    return string(buf), nil
 }

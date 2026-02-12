@@ -38,13 +38,19 @@ func TestReadBRPOPMultiBulk(t *testing.T) {
 }
 
 func TestReadBRPOPTimeout(t *testing.T) {
-	rw := bufio.NewReadWriter(bufio.NewReader(bytes.NewBufferString("$-1\r\n")), bufio.NewWriter(io.Discard))
+	for _, payload := range []string{
+		"$-1\r\n",  // bulk nil
+		"*-1\r\n",  // array nil (Redis BRPOP timeout)
+		"*0\r\n",   // empty array (defensive)
+	} {
+		rw := bufio.NewReadWriter(bufio.NewReader(bytes.NewBufferString(payload)), bufio.NewWriter(io.Discard))
 
-	key, msg, err := readBRPOP(rw)
-	if err != nil {
-		t.Fatalf("readBRPOP error: %v", err)
-	}
-	if key != "" || msg != "" {
-		t.Fatalf("expected empty timeout result, got %q %q", key, msg)
+		key, msg, err := readBRPOP(rw)
+		if err != nil {
+			t.Fatalf("readBRPOP error for %q: %v", payload, err)
+		}
+		if key != "" || msg != "" {
+			t.Fatalf("expected empty timeout result for %q, got %q %q", payload, key, msg)
+		}
 	}
 }

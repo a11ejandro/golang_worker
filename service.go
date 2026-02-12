@@ -66,6 +66,8 @@ func runService(db *sql.DB) {
 	}
 	queue := "queue:" + qname
 
+	log.Printf("[go_worker] starting service redis=%s queue=%s", redisURL, queue)
+
 	for {
 		conn, err := net.DialTimeout("tcp", host, 5*time.Second)
 		if err != nil {
@@ -92,6 +94,9 @@ func runService(db *sql.DB) {
 			}
 		}
 
+		log.Printf("[go_worker] connected redis_host=%s db=%d listening=%s", host, dbIndex, queue)
+		lastHeartbeat := time.Now()
+
 		for {
 			if err := writeCommand(rw, "BRPOP", queue, "5"); err != nil {
 				log.Printf("redis write error: %v", err)
@@ -105,8 +110,13 @@ func runService(db *sql.DB) {
 				break
 			}
 			if key == "" && payload == "" {
+				if time.Since(lastHeartbeat) >= 60*time.Second {
+					log.Printf("[go_worker] idle (no jobs) queue=%s", queue)
+					lastHeartbeat = time.Now()
+				}
 				continue // timeout
 			}
+			lastHeartbeat = time.Now()
 			var job sidekiqJob
 			if err := json.Unmarshal([]byte(payload), &job); err != nil {
 				log.Printf("invalid job json: %v", err)
@@ -124,8 +134,9 @@ func runService(db *sql.DB) {
 				log.Printf("job missing test_run_id: %s", payload)
 				continue
 			}
+			log.Printf("[go_worker] popped key=%s job_queue=%s class=%s test_run_id=%d", key, job.Queue, job.Class, id)
 			if err := processTestRun(db, id); err != nil {
-				log.Printf("process error: %v", err)
+				log.Printf("[go_worker] process error key=%s class=%s test_run_id=%d err=%v", key, job.Class, id, err)
 			}
 		}
 		conn.Close()
