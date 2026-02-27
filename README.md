@@ -67,3 +67,12 @@ Environment:
 - Standard deviation uses population variance (divide by n), matching the Ruby service.
 - Memory uses the delta of Go `runtime.MemStats.TotalAlloc` (bytes) during computation. This is analogous to Ruby's MemoryProfiler total allocated bytes.
 - Timestamps are set via `NOW()` on insert.
+
+## Tests (Docker)
+
+The runtime Go worker image is a minimal Alpine image (no `go` toolchain). To run unit tests in a container, use the `golang_worker_test` compose service (it targets the Dockerfile build stage).
+
+From `rails_8/`:
+
+- `docker compose build golang_worker_test`
+- `docker compose run --rm golang_worker_test`

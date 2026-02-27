@@ -39,9 +39,9 @@ func TestReadBRPOPMultiBulk(t *testing.T) {
 
 func TestReadBRPOPTimeout(t *testing.T) {
 	for _, payload := range []string{
-		"$-1\r\n",  // bulk nil
-		"*-1\r\n",  // array nil (Redis BRPOP timeout)
-		"*0\r\n",   // empty array (defensive)
+		"$-1\r\n", // bulk nil
+		"*-1\r\n", // array nil (Redis BRPOP timeout)
+		"*0\r\n",  // empty array (defensive)
 	} {
 		rw := bufio.NewReadWriter(bufio.NewReader(bytes.NewBufferString(payload)), bufio.NewWriter(io.Discard))
 
